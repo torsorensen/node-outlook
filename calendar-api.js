@@ -9,6 +9,8 @@ var utilities = require('./utilities.js');
 module.exports = {
   /**
    * Used to get events from a calendar.
+   * The /Events or /Calendar endpoints used in this function retrieves the event types SingleInstance and SeriesMasters.
+   * Note: This API endpoint does not return recurrent events, instead see getEventsCalendarView()
    * 
    * @param parameters {object} An object containing all of the relevant parameters. Possible values:
    * @param parameters.token {string} The access token.
@@ -89,118 +91,102 @@ module.exports = {
       }
     });
   },
-  
+
   /**
-   * Syncs events of a calendar.
+   * Used to get events from a CalendarView for a given time window.
+   * The /CalendarView endpoint retrieves the event types SingleInstance, Occurence, and Exception.
+   * Note: Using this API endpoint, the SeriesMaster event type is returned as Occurence.
    * 
    * @param parameters {object} An object containing all of the relevant parameters. Possible values:
    * @param parameters.token {string} The access token.
-   * @param [parameters.skipToken] {string} The value to pass in the `skipToken` query parameter in the API call.
-   * @param [parameters.deltaToken] {string} The value to pass in the `deltaToken` query parameter in the API call.
    * @param [parameters.useMe] {boolean} If true, use the `/Me` segment instead of the `/Users/<email>` segment. This parameter defaults to false and is ignored if the `parameters.user.email` parameter isn't provided (the `/Me` segment is always used in this case).
    * @param [parameters.user.email] {string} The SMTP address of the user. If absent, the `/Me` segment is used in the API URL.
    * @param [parameters.user.timezone] {string} The timezone of the user.
-   * @param [parameters.calendarId] {string} The calendar id. If absent, the API calls the `/User/calendarview` endpoint. Valid values of this parameter are:
-   * 
-   * - The `Id` property of a `Calendar` entity
-   * - `Primary`, the primary calendar is used. It is used by default if no Id is specified
+   * @param [parameters.calendarId] {string} The calendar id. If absent, the API calls the `/User/Events` endpoint.
+   * @param [parameters.calendarViewTimeWindow] {object} An object containing the key/value pairs {startdatetime: 2017-01-25T00:00:00Z, enddatetime: 2017-01-26T00:00:00Z};
+   * @param [parameters.odataParams] {object} An object containing key/value pairs representing OData query parameters. See [Use OData query parameters]{@link https://msdn.microsoft.com/office/office365/APi/complex-types-for-mail-contacts-calendar#UseODataqueryparameters} for details.
    * 
    * @param [callback] {function} A callback function that is called when the function completes. It should have the signature `function (error, result)`.
    * 
    * @example var outlook = require('node-outlook');
    * 
-   * // Set the API endpoint to use the 2.0 version of the api
+   * // Set the API endpoint to use the v2.0 endpoint
    * outlook.base.setApiEndpoint('https://outlook.office.com/api/v2.0');
    * 
    * // This is the oAuth token 
    * var token = 'eyJ0eXAiOiJKV1Q...';
    * 
+   * // Set up oData parameters
+   * var queryParams = {
+   *   '$select': 'Subject,Start,End',
+   *   '$orderby': 'Start/DateTime desc',
+   *   '$top': 20
+   * };
+   * 
+   * // Set up time window for the /CalendarView GET parameters. Use Date.toISOString() for formatting, e.g. 2017-01-25T00:00:00Z
+   * var calendarViewTimeWindow = {
+   *    startdatetime: '2017-01-25T00:00:00Z',
+   *    enddatetime: '2017-01-26T00:00:00Z'}
+   * };
+   * 
    * // Pass the user's email address
    * var userInfo = {
    *   email: 'sarad@contoso.com'
    * };
-   *
-   * // You have to specify a time window
-   * var startDateTime = "2017-01-01";
-   * var endDateTime = "2017-12-31";
    * 
-   * var apiOptions = {
-   *   token: token,
-   *   calendarId: 'calendar_id', // If none specified, the Primary calendar will be used
-   *   user: userinfo,
-   *   startDateTime: startDateTime,
-   *   endDateTime: endDateTime
-   * };
-   *
-   * outlook.calendar.syncEvents(apiOptions, function(error, events) {
-   *   if (error) {
-   *     console.log('syncEvents returned an error:', error);
-   *   } else {
-   *     // Do something with the events.value array
-   *     // Then get the @odata.deltaLink
-   *     var delta = messages['@odata.deltaLink'];
-   * 
-   *     // Handle deltaLink value appropriately:
-   *     // In general, if the deltaLink has a $skiptoken, that means there are more
-   *     // "pages" in the sync results, you should call syncEvents again, passing
-   *     // the $skiptoken value in the apiOptions.skipToken. If on the other hand,
-   *     // the deltaLink has a $deltatoken, that means the sync is complete, and you should
-   *     // store the $deltatoken value for future syncs.
-   *     //
-   *     // The one exception to this rule is on the intial sync (when you call with no skip or delta tokens).
-   *     // In this case you always get a $deltatoken back, even if there are more results. In this case, you should
-   *     // immediately call syncMessages again, passing the $deltatoken value in apiOptions.deltaToken.
-   *   }
-   * }
+   * outlook.calendar.getEventsCalendarView({token: token, folderId: 'Inbox', odataParams: queryParams, user: userInfo, calendarViewTimeWindow: calendarViewTimeWindow},
+   *   function(error, result){
+   *     if (error) {
+   *       console.log('getEvents returned an error: ' + error);
+   *     }
+   *     else if (result) {
+   *       console.log('getEvents returned ' + result.value.length + ' events.');
+   *       result.value.forEach(function(event) {
+   *         console.log('  Subject:', event.Subject);
+   *         console.log('  Start:', event.Start.DateTime.toString());
+   *         console.log('  End:', event.End.DateTime.toString());
+   *       });
+   *     }
+   *   });
    */
-  
-  syncEvents: function(parameters, callback) {
-      var userSpec = utilities.getUserSegment(parameters);
-      var calendarSpec = parameters.calendarId === undefined ? '' : "/calendars/" + parameters.calendarId;
+  getEventsCalendarView: function(parameters, callback){
+    var userSpec = utilities.getUserSegment(parameters);
+    var calendarSpec = parameters.calendarId === undefined ? '' : '/Calendars/' + parameters.calendarId;
+ 
+    if (parameters.calendarViewTimeWindow !== undefined) {
+      startdatetime = parameters.calendarViewTimeWindow.startdatetime;
+      enddatetime = parameters.calendarViewTimeWindow.enddatetime;
+    }
+    
+    var requestUrl = base.apiEndpoint() + userSpec + "/calendarview?startdatetime=" + startdatetime + "&enddatetime=" + enddatetime;//?startdatetime=2017-01-24T00:00:00Z&enddatetime=2017-01-25T00:00:00Z";
 
-      var requestUrl = base.apiEndpoint() + userSpec + '/calendarview?startdatetime=' + parameters.startDatetime + '&enddatetime=' + parameters.endDatetime;
-
-      var query = parameters.odataParams || {};
-      if (parameters.skipToken) {
-          query['$skiptoken'] = parameters.skipToken;
+    var apiOptions = {
+      url: requestUrl,
+      token: parameters.token,
+      user: parameters.user
+    };
+    
+    if (parameters.odataParams !== undefined) {
+      apiOptions['query'] = parameters.odataParams;
+    }
+    
+    base.makeApiCall(apiOptions, function(error, response) {
+      if (error) {
+        if (typeof callback === 'function') {
+          callback(error, response);
+        }
       }
-
-      if (parameters.deltaToken) {
-          query['$deltatoken'] = parameters.deltaToken;
+      else if (response.statusCode !== 200) {
+        if (typeof callback === 'function') {
+          callback('REST request returned ' + response.statusCode + '; body: ' + JSON.stringify(response.body), response);
+        }
       }
-
-      var headers = {
-          Prefer: [
-              'odata.track-changes',
-              'odata.maxpagesize' + (parameters.pageSize === undefined ? '50' : parameters.pageSize.toString())
-          ]
-      };
-
-      var apiOptions = {
-          url: requestUrl,
-          token: parameters.token,
-          user: parameters.user,
-          query: query,
-          headers: headers
+      else {
+        if (typeof callback === 'function') {
+          callback(null, response.body);
+        }
       }
-
-      base.makeApiCall(apiOptions, (error, response) => {
-          if (error) {
-              if (typeof callback === 'function') {
-                  callback(error, response);
-              }
-          }
-          else if (response.statusCode !== 200) {
-              if (typeof callback === 'function') {
-                  callback('REST request returned ' + response.statusCode + '; body: ' + JSON.stringify(response.body), response);
-              }
-          }
-          else {
-              if(typeof callback === 'function') {
-                  callback(null, response.body);
-              }
-          }
-      });
+    });
   },
   
   /**

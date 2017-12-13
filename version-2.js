@@ -77,7 +77,7 @@ module.exports = {
     else {
       timezone = defaultTimeZone;
     }
-    
+
     if (timezone.length > 0) {
       headers['Prefer'] = headers['Prefer'] || [];
       headers['Prefer'].push('outlook.timezone = "' + timezone + '"');
